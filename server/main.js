@@ -18,6 +18,8 @@ const compiler = webpack(webpackConfig)
 const  kue = require('./kue.js');
 const url = require('url')
 const refreshToken = require('./refreshToken.js')
+const request = require('request-promise');
+
 //const player = require('./player.js')
 
 if (project.env === 'development') {
@@ -75,7 +77,7 @@ admin.initializeApp({
     databaseURL: "https://partypeople-b736d.firebaseio.com"
 });
 
-const request = require('request');
+//const request = require('request');
 let _exitActivJob;
 
 const jobProcess = [];
@@ -99,58 +101,57 @@ admin.database().ref('/kues').on("child_added", function(snapshot) {
         jobProcess.push(projects)
         logger.info(projects)
         jobs.process(projects,1, async ( job, done ) => {
-                const access_ref = await admin.database().ref(`projects/${job.data.project}/access_token`).once('value');
-                const access_token = `${access_ref.val()}`
-                const refresh_token = job.data.refresh_token;
-                const headers = {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer '+access_token,
-                };
+            const access_ref = await admin.database().ref(`projects/${job.data.project}/access_token`).once('value');
+            await admin.database().ref(`projects/${job.data.project}/active/${job.data.uri}`).set(true)
+            const access_token = `${access_ref.val()}`
+            const refresh_token = job.data.refresh_token;
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer '+access_token,
+            };
 
-                const dataString = `{"uris":["${job.data.uri}"]}`;
-                const device = job.data.device;
-                const options = {
-                    url: `https://api.spotify.com/v1/me/player/play?device_id=${device}`,
-                    method: 'PUT',
-                    headers: headers,
-                    body:  dataString
-                };
-                //Store the job's done function in a global variable so we can access it from elsewhere.
-                 _exitActivJob = () => {
+            const dataString = `{"uris":["${job.data.uri}"]}`;
+            const device = job.data.device;
+            const options = {
+                url: `https://api.spotify.com/v1/me/player/play?device_id=${device}`,
+                method: 'PUT',
+                headers: headers,
+                body:  dataString
+            };
+            //Store the job's done function in a global variable so we can access it from elsewhere.
+            _exitActivJob = () => {
+                done();
+            };
+            request(options)
+                .then((response) => {
+                    logger.info("Playing",job.data.title);
+                    setTimeout( async () => {
+                        const del_ref = admin.database().ref(`projects/${job.data.project}/Songs/${job.data.key}`);
+                        try{
+                            await del_ref.remove()
+                            logger.info('song removed');
+                        }catch( error ){
+                            console.log('Error deleting data:', error);
+                        };
+                        done();
+                    }, job.data.time)
+                }).catch( async e => {
+                    logger.error(e) 
+                    try{  
+                        const res = await refreshToken(refresh_token,job.data.project,false)
+                        const del_ref = admin.database().ref(`projects/${job.data.project}/Songs/${job.data.key}`);
+                        try{
+                            await del_ref.remove()
+                            logger.info('song removed');
+                        }catch( error ){
+                            console.log('Error deleting data:', error);
+                        }
+                        logger.info(res)
+                    }catch(e){logger.error(e) };
                     done();
-                };
-                request(options, async (error, response, body) => {
-                    if (body.indexOf('error') === -1) {
-                        logger.info("Playing",job.data.title);
-                        await admin.database().ref(`projects/${job.data.project}/Songs/${job.data.key}/song/active`).set(true)
-                        setTimeout( async () => {
-                            const del_ref = admin.database().ref(`projects/${job.data.project}/Songs/${job.data.key}`);
-                            try{
-                                await del_ref.remove()
-                                logger.info('song removed');
-                            }catch( error ){
-                                console.log('Error deleting data:', error);
-                            };
-                            done();
-                        }, job.data.time);
-                    } else {
-                        logger.error(body) 
-                        try{  
-                            const res = await refreshToken(refresh_token,job.data.project,false)
-                            const del_ref = admin.database().ref(`projects/${job.data.project}/Songs/${job.data.key}`);
-                            try{
-                                await del_ref.remove()
-                                logger.info('song removed');
-                            }catch( error ){
-                                console.log('Error deleting data:', error);
-                            }
-                            logger.info(res)
-                        }catch(e){logger.error(e) };
-                            done();
-                    }
                 })
-            })
+        })
     }
 })
 
@@ -160,17 +161,17 @@ admin.database().ref('/kues').once("child_added", function(snapshot) {
     ref.on("child_changed", (snapshot) => {
         let song = snapshot.val()
         if(song){
-        kue.Job.get( song.song.song_id, ( err, job ) => {
-            try{
-                job.priority(-song.song.project.votes).update(() => {
-                    if(!err){
-                        logger.info("Changed",song.song.project.votes,song.song.song_id,song.song.name,job.data.title);
-                    }
-                })
-            }catch(e){
-                logger.error(e.message)
-            }
-        });
+            kue.Job.get( song.song.song_id, ( err, job ) => {
+                try{
+                    job.priority(-song.song.project.votes).update(() => {
+                        if(!err){
+                            logger.info("Changed",song.song.project.votes,song.song.song_id,song.song.name,job.data.title);
+                        }
+                    })
+                }catch(e){
+                    logger.error(e.message)
+                }
+            });
         }
     })
     ref.on("child_removed", function(snapshot) {

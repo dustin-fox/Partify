@@ -24,7 +24,6 @@ const styles = {
         display: 'flex',
         flexWrap: 'wrap',
         width: 500,
-        height: 450,
     },
 };
 
@@ -41,26 +40,23 @@ const SongsList = ({onDelete,upVote,downVote,songs,admin,auth,uid}) => (
                     cellHeight={200}
                     style={styles.gridList}
                 >
-                    { map( songs, (song, id)  => {
-                        const disabledUp = typeof song.song.project.votedUpBy == 'object' ? Object.keys(song.song.project.votedUpBy).map( key => key).includes(uid)  : false;
-                        const disabledDown = typeof song.song.project.votedDownBy == 'object' ? Object.keys(song.song.project.votedDownBy).map( key => key).includes(uid)  : false;
-                        const visableDelete = song.song.project.submitedBy === uid  
-                        const active = song.song.active ? true : false;
-                        const author = song.song.project.author;
+                    { songs.map( song  => {
                         return (
-                            <span key={id}>
+                            <span key={song.id}>
                                 <SongItem
-                                    author={ author }
-                                    disabledUp = {disabledUp}
-                                    disabledDown = {disabledDown}
-                                    song={song.song}
+                                    author={ song.author }
+                                    disabledUp = {song.disabledUp}
+                                    disabledDown = {song.disabledDown}
                                     votes={song.song.project.votes}
-                                    visableDelete={visableDelete || admin}
-                                    active={active}
+                                    song={song}
+                                    name={song.song.name}
+                                    img={song.img}
+                                    visableDelete={song.visableDelete || song.admin}
+                                    active={song.active}
                                     upVote={upVote}
                                     downVote = {downVote }
                                     onDeleteClick = {onDelete}
-                                    id={id}
+                                    id={song.id}
                                 />
                             </span>
                         )})}
